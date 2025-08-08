@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ASCII Blob Fullscreen</title>
+  <title>ASCII Blob Cleaned</title>
   <style>
     html, body {
       margin: 0;
@@ -92,18 +92,21 @@
       const radiusX = w * 0.45;
       const radiusY = h * 0.4;
 
+      // Create smooth hyperpigmented gradient
       const gradient = ctx.createRadialGradient(
         centerX, centerY, 0,
         centerX, centerY, Math.max(radiusX, radiusY)
       );
 
-      gradient.addColorStop(0.0, "#ffffff");
-      gradient.addColorStop(0.2, "cyan");
-      gradient.addColorStop(0.4, "magenta");
-      gradient.addColorStop(0.6, "yellow");
-      gradient.addColorStop(0.8, "#ff0033");
-      gradient.addColorStop(1.0, "#000000");
+      gradient.addColorStop(0.0, "rgba(255, 255, 255, 0)");
+      gradient.addColorStop(0.2, "rgba(0, 255, 255, 0.5)");
+      gradient.addColorStop(0.4, "rgba(255, 0, 255, 0.6)");
+      gradient.addColorStop(0.6, "rgba(255, 255, 0, 0.4)");
+      gradient.addColorStop(0.8, "rgba(255, 0, 80, 0.3)");
+      gradient.addColorStop(1.0, "rgba(0, 0, 0, 0)");
 
+      ctx.save();
+      ctx.filter = "blur(4px)"; // Softens everything
       ctx.fillStyle = gradient;
       ctx.beginPath();
 
@@ -118,6 +121,7 @@
       );
 
       ctx.fill();
+      ctx.restore();
     }
 
     function animate() {
