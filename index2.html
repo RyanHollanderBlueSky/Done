@@ -1,14 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Interstellar Vibe Blob</title>
+  <meta charset="UTF-8" />
+  <title>Stratospheres Render</title>
   <style>
     html, body {
-      margin: 0;
-      padding: 0;
+      margin: 0; padding: 0;
       background: #000;
       overflow: hidden;
+      font-family: monospace;
     }
     canvas {
       position: absolute;
@@ -17,8 +17,7 @@
     }
     #ascii {
       position: absolute;
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       font-family: monospace;
       font-size: 11px;
       color: rgba(255, 255, 255, 0.05);
@@ -27,11 +26,11 @@
       mix-blend-mode: color-dodge;
       pointer-events: none;
       padding: 2rem;
+      line-height: 1.3;
     }
     #grain {
       position: absolute;
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABg3Am1AAAAQklEQVR42u3QQREAAAQEMOl/ccwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwb+EE2Jm9k3YlAAAAAElFTkSuQmCC");
       opacity: 0.07;
       z-index: 2;
@@ -44,68 +43,130 @@
   </style>
 </head>
 <body>
-  <canvas id="blob"></canvas>
+  <canvas id="blobCanvas"></canvas>
+  <canvas id="fxCanvas"></canvas>
+
   <div id="ascii">
     const mScore = await AI.predict();<br>
-    if (cpc &gt; 0.5 &amp;&amp; score &gt; 0.7) engage("orbit-seq");<br>
-    loop() => { draw(time++); };<br>
-    mirror("intention") * 4.2;<br>
-    let payload = rainbowGradient(blendLayer);<br>
+    let core = await getCenter();<br>
+    for (layer of thoughts) { emit(layer, { blend: "dodge" }); }<br>
+    engageSequence("orbit-pulse", ghostMode=true);<br>
+    payload.visualize("ring-memory");
   </div>
   <div id="grain"></div>
-  <div id="ui-layer"><!-- Future UI goes here --></div>
+  <div id="ui-layer"></div>
 
   <script>
-    const canvas = document.getElementById("blob");
-    const ctx = canvas.getContext("2d");
+    const blobCanvas = document.getElementById("blobCanvas");
+    const fxCanvas = document.getElementById("fxCanvas");
+    const blobCtx = blobCanvas.getContext("2d");
+    const fxCtx = fxCanvas.getContext("2d");
+
     let w, h, t = 0;
+    let trail = [];
 
     function resize() {
-      w = canvas.width = window.innerWidth;
-      h = canvas.height = window.innerHeight;
+      w = blobCanvas.width = fxCanvas.width = window.innerWidth;
+      h = blobCanvas.height = fxCanvas.height = window.innerHeight;
     }
 
     resize();
     window.addEventListener("resize", resize);
 
     function drawBlob(x, y, time) {
-      ctx.save();
-      ctx.translate(x, y);
+      blobCtx.save();
+      blobCtx.translate(x, y);
       const radius = 60 + Math.sin(time * 0.01) * 10;
-      ctx.beginPath();
-
+      blobCtx.beginPath();
       for (let a = 0; a <= Math.PI * 2 + 0.1; a += 0.1) {
         let r = radius + 10 * Math.sin(6 * a + time * 0.02);
         let px = r * Math.cos(a);
         let py = r * Math.sin(a);
-        ctx.lineTo(px, py);
+        blobCtx.lineTo(px, py);
       }
-
-      const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius + 40);
+      const gradient = blobCtx.createRadialGradient(0, 0, 0, 0, 0, radius + 30);
       gradient.addColorStop(0, "#fff");
       gradient.addColorStop(0.3, "magenta");
       gradient.addColorStop(0.6, "cyan");
       gradient.addColorStop(1, "black");
+      blobCtx.fillStyle = gradient;
+      blobCtx.globalCompositeOperation = "lighter";
+      blobCtx.fill();
+      blobCtx.restore();
+    }
 
-      ctx.fillStyle = gradient;
-      ctx.globalCompositeOperation = "lighter";
-      ctx.fill();
-      ctx.restore();
+    function drawRings(time) {
+      const centerX = w / 2;
+      const centerY = h / 2;
+      fxCtx.save();
+      fxCtx.translate(centerX, centerY);
+      fxCtx.fillStyle = "rgba(255,255,255,0.04)";
+      fxCtx.font = "11px monospace";
+      fxCtx.textAlign = "center";
+      fxCtx.textBaseline = "middle";
+
+      const chars = ['0', '1', 'x', '+', '-', '=', '[', ']'];
+      for (let ring = 1; ring <= 3; ring++) {
+        const radius = 120 + ring * 30 + Math.sin(time * 0.01 + ring) * 5;
+        const count = 40 + ring * 5;
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2 + time * 0.001 * (ring % 2 === 0 ? 1 : -1);
+          const x = radius * Math.cos(angle);
+          const y = radius * Math.sin(angle);
+          const char = chars[Math.floor(Math.random() * chars.length)];
+          fxCtx.fillText(char, x, y);
+        }
+      }
+      fxCtx.restore();
+    }
+
+    function drawPulses(time) {
+      const centerX = w / 2;
+      const centerY = h / 2;
+      const pulseCount = 3;
+      for (let i = 0; i < pulseCount; i++) {
+        const pulseRadius = ((time + i * 50) % 300) * 2;
+        fxCtx.beginPath();
+        fxCtx.arc(centerX, centerY, pulseRadius, 0, 2 * Math.PI);
+        fxCtx.strokeStyle = `rgba(255, 255, 255, ${0.02})`;
+        fxCtx.lineWidth = 1;
+        fxCtx.stroke();
+      }
+    }
+
+    function drawTrail() {
+      fxCtx.save();
+      for (let i = 0; i < trail.length; i++) {
+        let p = trail[i];
+        fxCtx.beginPath();
+        fxCtx.arc(p.x, p.y, 4, 0, 2 * Math.PI);
+        fxCtx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+        fxCtx.fill();
+        p.alpha -= 0.01;
+      }
+      fxCtx.restore();
+      trail = trail.filter(p => p.alpha > 0);
     }
 
     function animate() {
-      t += 1;
-      ctx.clearRect(0, 0, w, h);
+      t++;
+      blobCtx.clearRect(0, 0, w, h);
+      fxCtx.clearRect(0, 0, w, h);
 
       const orbitRadius = Math.min(w, h) * 0.25;
       const centerX = w / 2;
       const centerY = h / 2;
       const angle = t * 0.005;
+      const x = centerX + orbitRadius * Math.cos(angle);
+      const y = centerY + orbitRadius * Math.sin(angle);
 
-      const blobX = centerX + orbitRadius * Math.cos(angle);
-      const blobY = centerY + orbitRadius * Math.sin(angle);
+      drawBlob(x, y, t);
+      trail.push({ x, y, alpha: 0.2 });
 
-      drawBlob(blobX, blobY, t);
+      drawTrail();
+      drawRings(t);
+      drawPulses(t);
+
       requestAnimationFrame(animate);
     }
 
@@ -113,4 +174,5 @@
   </script>
 </body>
 </html>
+
 
