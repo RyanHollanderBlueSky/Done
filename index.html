@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>STRATOSPHERES-AI — WebGL Hero</title>
+<style>
+  :root{
+    --bg:#0a0b0f; --text:#e9ebf1; --muted:#b8bed0; --border:rgba(255,255,255,.12);
+    --a1:#66ccff; --a2:#9f6cff; --a3:#ff4d6d; --a4:#ffd166; --a5:#4dffbf;
+  }
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial}
+  a{color:inherit;text-decoration:none}
+  .container{max-width:1200px;margin:0 auto;padding:0 24px}
+  /* Nav */
+  .nav{position:sticky;top:0;z-index:5;background:rgba(11,13,18,.35);backdrop-filter:blur(12px) saturate(120%);border-bottom:1px solid var(--border)}
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;padding:12px 0}
+  .brand{display:flex;align-items:center;gap:10px;opacity:.95}
+  .brand svg{width:28px;height:28px;filter:drop-shadow(0 0 12px rgba(159,108,255,.35))}
+  .brand-name{font-weight:700;letter-spacing:.08em;font-size:14px}
+  .nav-actions{display:flex;gap:10px}
+  .btn{padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.06);transition:.2s;cursor:pointer}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 8px 30px rgba(0,0,0,.3)}
+  .btn-ghost{background:transparent}
+  .btn-outline{background:transparent;border:1px solid rgba(159,108,255,.6)}
+  /* Hero */
+  .hero{position:relative;min-height:100vh}
+  #gl{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .grain{position:absolute;inset:0;mix-blend-mode:overlay;opacity:.08;z-index:2;pointer-events:none}
+  .hero-content{position:relative;z-index:3;padding:96px 0}
+  .glass{max-width:820px;background:rgba(20,20,23,.45);border:1px solid var(--border);border-radius:12px;padding:28px;backdrop-filter:blur(12px) saturate(120%);box-shadow:0 10px 60px rgba(0,0,0,.35)}
+  h1{margin:0 0 10px;font-size:clamp(28px,4vw,44px);line-height:1.05;font-weight:800}
+  p{margin:0 0 16px;color:var(--muted);font-size:clamp(16px,2vw,19px)}
+  .cta{display:inline-block;border:none;padding:12px 18px;border-radius:12px;background:linear-gradient(180deg,#b99dff,#9f6cff);color:#0b0d12;font-weight:700;box-shadow:0 0 0 0 rgba(159,108,255,.55);animation:halo 5s ease-in-out infinite}
+  @keyframes halo{0%,100%{box-shadow:0 0 0 0 rgba(159,108,255,.55)}50%{box-shadow:0 0 40px 10px rgba(159,108,255,.35)}}
+  @media(prefers-reduced-motion:reduce){#gl{filter:saturate(.95)}.grain{display:none}}
+</style>
+</head>
+<body>
+  <!-- NAV -->
+  <nav class="nav" role="navigation" aria-label="Primary">
+    <div class="container nav-inner">
+      <a class="brand" href="#">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#9f6cff"/><stop offset="100%" stop-color="#66ccff"/></radialGradient></defs><path fill="url(#g)" d="M32 4c8 0 15 3 20 8l-6 6a18 18 0 1 0 0 28l6 6c-5 5-12 8-20 8S17 55 12 50l6-6a18 18 0 1 0 0-24l-6-6c5-5 12-8 20-8z"/></svg>
+        <strong class="brand-name">STRATOSPHERES-AI</strong>
+      </a>
+      <div class="nav-actions">
+        <a class="btn btn-outline" href="#pay">Make Payment</a>
+        <a class="btn btn-ghost" href="#login">Login</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <main class="hero">
+    <canvas id="gl"></canvas>
+
+    <!-- tiny animated noise on top -->
+    <svg class="grain" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+      <filter id="noiseFilter"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="2"/></filter>
+      <rect width="100%" height="100%" filter="url(#noiseFilter)"></rect>
+    </svg>
+
+    <div class="container hero-content">
+      <section class="glass" role="region" aria-label="Intro">
+        <h1>We build marketing and AI tech for those who grow fast</h1>
+        <p>An AI-Powered GTM Agency. We build your protective layers.</p>
+        <a class="cta" href="#notion">Explore our Notion →</a>
+      </section>
+    </div>
+  </main>
+
+<script>
+/* =========================
+   WebGL2 Hero Renderer
+   - Pass 1: background gradient + stars + dark pocket (fullscreen)
+   - Pass 2: ASCII ring (instanced quads sampling a glyph atlas)
+   ========================= */
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias:true, alpha:true, premultipliedAlpha:false });
+if(!gl){ document.body.innerHTML = '<p style="padding:32px;color:#fff">WebGL2 not available.</p>'; throw new Error('WebGL2 not supported'); }
+
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+function resize(){
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = Math.floor(w * DPR); canvas.height = Math.floor(h * DPR);
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+new ResizeObserver(resize).observe(canvas); resize();
+
+const state = { time:0, mouse:[0,0], motion: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.0 : 1.0 };
+window.addEventListener('pointermove', e=>{
+  const r = canvas.getBoundingClientRect();
+  state.mouse[0] = (e.clientX - r.left) * DPR;
+  state.mouse[1] = (e.clientY - r.top)  * DPR;
+});
+
+// ---------- helpers ----------
+function compile(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){ console.error(gl.getShaderInfoLog(s)); throw new Error('Shader compile error'); }
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram(); gl.attachShader(p, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)){ console.error(gl.getProgramInfoLog(p)); throw new Error('Program link error'); }
+  return p;
+}
+
+// ---------- Pass 1: Background ----------
+const bgProg = program(`#version 300 es
+precision highp float;
+const vec2 verts[3]=vec2[3](vec2(-1.,-1.),vec2(3.,-1.),vec2(-1.,3.));
+void main(){ gl_Position = vec4(verts[gl_VertexID],0.,1.); }
+`, `#version 300 es
+precision highp float;
+out vec4 o;
+uniform vec2 uRes;
+uniform float uTime;
+uniform vec2 uMouse;
+
+// hash helpers
+float hash(vec2 p){ return fract(sin(dot(p, vec2(41.3,289.7))) * 43758.5453); }
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  float a = hash(i), b = hash(i+vec2(1,0)), c = hash(i+vec2(0,1)), d = hash(i+vec2(1,1));
+  vec2 u = f*f*(3.-2.*f);
+  return mix(a, b, u.x) + (c-a)*u.y*(1.-u.x) + (d-b)*u.x*u.y;
+}
+vec3 hsl2rgb(vec3 hsl){
+  vec3 rgb = clamp(abs(mod(hsl.x*6.+vec3(0,4,2),6.)-3.)-1.,0.,1.);
+  return hsl.z + (hsl.y*(1.-abs(2.*hsl.z-1.))) * (rgb-0.5);
+}
+
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes; // 0..1
+  vec2 m = uMouse / uRes;
+  // drifting gradient blobs
+  vec2 c1 = vec2(0.15,0.2) + (m-0.5)*0.08;
+  vec2 c2 = vec2(0.85,0.2) + (m-0.5)*0.06;
+  vec2 c3 = vec2(0.2,0.95) + (m-0.5)*0.05;
+  vec2 c4 = vec2(0.9,0.95) + (m-0.5)*0.04;
+  vec2 c5 = vec2(0.45,0.25) + (m-0.5)*0.03;
+
+  float r1 = smoothstep(0.9,0.0, distance(uv,c1));
+  float r2 = smoothstep(0.9,0.0, distance(uv,c2));
+  float r3 = smoothstep(0.9,0.0, distance(uv,c3));
+  float r4 = smoothstep(0.9,0.0, distance(uv,c4));
+  float r5 = smoothstep(0.9,0.0, distance(uv,c5));
+
+  vec3 col = vec3(0.04,0.045,0.06);
+  col += r1*vec3(0.4,0.8,1.0);
+  col += r2*vec3(0.62,0.42,1.0);
+  col += r3*vec3(1.0,0.30,0.43);
+  col += r4*vec3(1.0,0.83,0.40);
+  col += r5*vec3(0.30,1.0,0.75);
+
+  // dark pocket for legibility
+  float pocket = smoothstep(0.65,0.2, distance(uv, vec2(0.35,0.38)));
+  col *= mix(0.55,1.0,pocket);
+
+  // starfield — sparse points + twinkle
+  vec2 grid = floor(uv * uRes / 2.0); // star seed grid
+  float rnd = hash(grid);
+  float star = step(0.997, rnd); // sparse
+  if(star > 0.0){
+    vec2 fuv = fract(uv * uRes / 2.0) - 0.5;
+    float d = length(fuv);
+    float tw = 0.5 + 0.5*sin(uTime* (2.0 + rnd*5.0));
+    col += (1.0 - smoothstep(0.0, 0.6, d)) * (0.35 + 0.35*tw);
+  }
+
+  o = vec4(col, 1.0);
+}
+`);
+const bgLoc = {
+  uRes: gl.getUniformLocation(bgProg, 'uRes'),
+  uTime: gl.getUniformLocation(bgProg, 'uTime'),
+  uMouse: gl.getUniformLocation(bgProg, 'uMouse')
+};
+
+// ---------- Glyph atlas (CPU once) ----------
+const CHARSET = 'AI01#$%&*+=~/\\{}()<>MNSTROPEH';
+const CELLS = 16;               // grid 16x16
+const ATLAS_SIZE = 1024;        // large to keep glyphs crisp
+const cell = ATLAS_SIZE/CELLS;
+const atlasCanvas = document.createElement('canvas');
+atlasCanvas.width = ATLAS_SIZE; atlasCanvas.height = ATLAS_SIZE;
+const ax = atlasCanvas.getContext('2d');
+ax.fillStyle = '#000'; ax.fillRect(0,0,ATLAS_SIZE,ATLAS_SIZE);
+ax.fillStyle = '#fff';
+ax.textAlign = 'center'; ax.textBaseline = 'middle';
+ax.font = `${Math.floor(cell*0.72)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+for(let i=0;i<CHARSET.length;i++){
+  const x = (i % CELLS) * cell + cell/2;
+  const y = Math.floor(i / CELLS) * cell + cell/2 + cell*0.04;
+  ax.fillText(CHARSET[i], x, y);
+}
+// upload atlas
+const atlasTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasCanvas);
+gl.generateMipmap(gl.TEXTURE_2D);
+
+// ---------- Pass 2: ASCII ring (instanced) ----------
+const ringProg = program(`#version 300 es
+precision highp float;
+
+layout(location=0) in vec2 aPos;      // quad -0.5..0.5
+layout(location=1) in float aAngle;   // base angle
+layout(location=2) in float aChar;    // char index
+layout(location=3) in float aJitter;  // per-instance seed
+
+uniform vec2 uRes;
+uniform float uTime;
+uniform vec2 uMouse;
+uniform float uMotion;
+uniform float uBaseR;
+uniform float uThick;
+
+out vec2 vUV;
+out vec2 vWorld;
+out float vChar;
+out float vFall;
+
+float hash(float x){ return fract(sin(x*34.53)*43758.5453); }
+float snoise(float x){
+  float i = floor(x), f = fract(x);
+  float a = hash(i), b = hash(i+1.0);
+  float u = f*f*(3.0-2.0*f);
+  return mix(a,b,u)*2.0-1.0;
+}
+
+void main(){
+  // screen -> world center
+  vec2 center = uRes*0.5;
+
+  // ring radius with squiggle/breathe
+  float breathe = 1.0 + 0.012*uMotion*sin(uTime*0.9);
+  float angle = aAngle + 0.07*uMotion*sin(uTime*0.7 + aJitter*6.2831);
+  float r = uBaseR*breathe + snoise(aAngle*3.0 + uTime*0.6 + aJitter*7.0) * (uThick*0.26);
+
+  // world position of glyph center
+  vec2 dir = vec2(cos(angle), sin(angle));
+  vec2 centerPos = center + dir * r;
+
+  // pointer tilt (visual only)
+  vec2 nmouse = (uMouse - center) / uRes;
+  float tiltX = -nmouse.y * 0.07*uMotion;
+  float tiltY =  nmouse.x * 0.07*uMotion;
+
+  // quad rotated to tangent
+  float rot = angle + 1.5708;
+  vec2 p = aPos * vec2(uThick*0.30, uThick*0.30); // glyph size
+  mat2 R = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
+  vec2 world = centerPos + R * p;
+
+  // simple radial falloff within ring thickness
+  float fall = 1.0 - min(1.0, abs(length(centerPos - center) - uBaseR) / (uThick*0.5));
+
+  // send varyings
+  vUV = aPos * 0.5 + 0.5;
+  vWorld = world;
+  vChar = aChar;
+  vFall = fall;
+
+  // to clip space
+  vec2 pos = world;
+  // perspective-ish tilt
+  pos.x += (pos.y - center.y) * tiltY * 40.0;
+  pos.y += (pos.x - center.x) * tiltX * 40.0;
+
+  vec2 clip = (pos / uRes)*2.0 - 1.0;
+  gl_Position = vec4(clip * vec2(1,-1), 0.0, 1.0);
+}
+`, `#version 300 es
+precision highp float;
+out vec4 o;
+
+uniform sampler2D uAtlas;
+uniform float uTime;
+uniform vec2 uRes;
+uniform vec2 uMouse;
+
+in vec2 vUV;
+in vec2 vWorld;
+in float vChar;
+in float vFall;
+
+// HSL -> RGB
+vec3 hsl2rgb(vec3 hsl){
+  vec3 rgb = clamp(abs(mod(hsl.x*6.0+vec3(0,4,2),6.0)-3.0)-1.0,0.0,1.0);
+  return hsl.z + (hsl.y*(1.0-abs(2.0*hsl.z-1.0))) * (rgb-0.5);
+}
+
+void main(){
+  // sample atlas
+  float cells = 16.0;
+  float idx = vChar;
+  vec2 cell = vec2(mod(idx,cells), floor(idx/cells));
+  vec2 uv = (cell + vUV) / cells;
+  float alpha = texture(uAtlas, uv).a;
+
+  // crisp-ish edges
+  alpha = smoothstep(0.45, 0.55, alpha);
+
+  // cursor influence
+  float pd = distance(vWorld, uMouse);
+  float infl = clamp(1.0 - pd / (min(uRes.x,uRes.y)*0.3), 0.0, 1.0);
+
+  // hue across ring + cursor bump
+  float hue = fract((vWorld.x + vWorld.y) * 0.0005 + infl*0.03 + 0.6*sin(uTime*0.1));
+  vec3 col = hsl2rgb(vec3(hue, 0.95, mix(0.55, 0.72, infl)));
+
+  float a = alpha * vFall * (0.85 + infl*0.35);
+  o = vec4(col * a, a);
+}
+`);
+const ringLoc = {
+  uRes: gl.getUniformLocation(ringProg, 'uRes'),
+  uTime: gl.getUniformLocation(ringProg, 'uTime'),
+  uMouse: gl.getUniformLocation(ringProg, 'uMouse'),
+  uAtlas: gl.getUniformLocation(ringProg, 'uAtlas'),
+  uMotion: gl.getUniformLocation(ringProg, 'uMotion'),
+  uBaseR: gl.getUniformLocation(ringProg, 'uBaseR'),
+  uThick: gl.getUniformLocation(ringProg, 'uThick'),
+};
+
+// geometry: one quad (two triangles), instanced around the circle
+const quad = new Float32Array([ -0.5,-0.5,  0.5,-0.5,  0.5,0.5,  -0.5,-0.5,  0.5,0.5,  -0.5,0.5 ]);
+const quadVBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
+gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+
+// instances
+const COUNT = 1200;
+const angles = new Float32Array(COUNT);
+const chars  = new Float32Array(COUNT);
+const jitter = new Float32Array(COUNT);
+for(let i=0;i<COUNT;i++){
+  angles[i] = (i/COUNT) * Math.PI*2;
+  chars[i]  = i % CHARSET.length;
+  jitter[i] = Math.random();
+}
+function makeInstBuf(data, loc){
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 1, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(loc, 1);
+  return buf;
+}
+
+// common VAO for ring
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+gl.bindBuffer(gl.ARRAY_BUFFER, quadVBO);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+makeInstBuf(angles, 1);
+makeInstBuf(chars, 2);
+makeInstBuf(jitter, 3);
+gl.bindVertexArray(null);
+
+// ---------- Render loop ----------
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.ONE, gl.ONE); // additive
+
+function frame(t){
+  state.time = t * 0.001;
+
+  // PASS 1: background
+  gl.disable(gl.BLEND);
+  gl.useProgram(bgProg);
+  gl.uniform2f(bgLoc.uRes, canvas.width, canvas.height);
+  gl.uniform1f(bgLoc.uTime, state.time);
+  gl.uniform2f(bgLoc.uMouse, state.mouse[0], state.mouse[1]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // PASS 2: ring
+  gl.enable(gl.BLEND);
+  gl.useProgram(ringProg);
+  gl.uniform2f(ringLoc.uRes, canvas.width, canvas.height);
+  gl.uniform1f(ringLoc.uTime, state.time);
+  gl.uniform2f(ringLoc.uMouse, state.mouse[0], state.mouse[1]);
+  gl.uniform1f(ringLoc.uMotion, state.motion);
+  const baseR = Math.min(canvas.width, canvas.height) * 0.30;
+  const thick = Math.min(canvas.width, canvas.height) * 0.12;
+  gl.uniform1f(ringLoc.uBaseR, baseR);
+  gl.uniform1f(ringLoc.uThick, thick);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  gl.uniform1i(ringLoc.uAtlas, 0);
+  gl.bindVertexArray(vao);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, COUNT);
+  gl.bindVertexArray(null);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// animate the SVG noise seed (cheap)
+(function animateNoise(){
+  const turb = document.querySelector('#noiseFilter feTurbulence');
+  if(!turb) return; let seed = 2;
+  function tick(){ seed = (seed + 0.5) % 1000; turb.setAttribute('seed', String(seed)); requestAnimationFrame(tick); }
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>
