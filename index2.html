@@ -1,138 +1,189 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>ASCII Blob Cleaned</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background: #000;
-      font-family: monospace;
-    }
-
-    canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      z-index: 0;
-    }
-
-    #ascii {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      font-family: monospace;
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.06);
-      white-space: pre;
-      mix-blend-mode: color-dodge;
-      z-index: 1;
-      pointer-events: none;
-      padding: 2rem;
-      line-height: 1.25;
-    }
-
-    #grain {
-      position: absolute;
-      width: 100%;
-      height: 100%;
-      background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABg3Am1AAAAQklEQVR42u3QQREAAAQEMOl/ccwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwYFwwb+EE2Jm9k3YlAAAAAElFTkSuQmCC");
-      opacity: 0.08;
-      z-index: 2;
-      pointer-events: none;
-    }
-
-    #ui-layer {
-      position: relative;
-      z-index: 3;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Point Gradient + ASCII Blob Ring</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  canvas{position:absolute;inset:0;display:block}
+  /* grain overlay */
+  .grain{pointer-events:none;z-index:3;mix-blend-mode:soft-light;opacity:.08}
+  /* reserved layer for future UI */
+  #ui-layer{position:relative;z-index:4;pointer-events:none}
+</style>
 </head>
 <body>
-  <canvas id="bg"></canvas>
-
-  <div id="ascii">
-    const mScore = await AI.predict();<br>
-    input_shape = (tokens=128)<br>
-    if persona_score &gt; 0.75 {<br>
-    &nbsp;&nbsp;engage("flow")<br>
-    }<br>
-    SELECT campaign_id, AVG(conversion_rate)<br>
-    FROM impressions WHERE intent == "high"<br>
-    mirrorBack("authority")<br>
-    fireHooks(strategy)<br>
-    runTest("scarcity")<br>
-    const vector = gpt.encode(user)<br>
-    return JSON.stringify(vector)<br>
-    -------------------------------
-  </div>
-
-  <div id="grain"></div>
+  <!-- 0: point gradient -->
+  <canvas id="grad"></canvas>
+  <!-- 1: ascii blob ring (drawn with clipping) -->
+  <canvas id="blob"></canvas>
+  <!-- 2: very light grain -->
+  <canvas id="grain" class="grain"></canvas>
   <div id="ui-layer"></div>
 
-  <script>
-    const canvas = document.getElementById('bg');
-    const ctx = canvas.getContext('2d');
-    let w, h, t = 0;
+<script>
+const grad = document.getElementById('grad');
+const gtx  = grad.getContext('2d');
+const blob = document.getElementById('blob');
+const btx  = blob.getContext('2d');
+const grain = document.getElementById('grain');
+const grx = grain.getContext('2d', { alpha: true });
 
-    function resize() {
-      w = canvas.width = window.innerWidth;
-      h = canvas.height = window.innerHeight;
+let W=0,H=0,t=0, mouse={x:0,y:0}, target={x:0,y:0};
+
+function resize(){
+  W = grad.width  = blob.width  = grain.width  = innerWidth;
+  H = grad.height = blob.height = grain.height = innerHeight;
+  drawGrain();
+}
+addEventListener('resize', resize);
+addEventListener('mousemove', (e)=>{
+  target.x = (e.clientX / W - .5) * 30;  // gentle parallax
+  target.y = (e.clientY / H - .5) * 30;
+});
+
+function drawGrain(){
+  const img = grx.createImageData(W,H);
+  const d = img.data;
+  for(let i=0;i<d.length;i+=4){
+    const n = (Math.random()*255)|0;
+    d[i]=d[i+1]=d[i+2]=n;
+    d[i+3]=28; // ~0.11 alpha
+  }
+  grx.putImageData(img,0,0);
+}
+
+// ---- POINT GRADIENT (multi-radial, blended) ----
+const points = [
+  {x:0.10,y:0.10,c:'#f3a532'}, // top-left orange
+  {x:0.90,y:0.10,c:'#6132ff'}, // top-right violet
+  {x:0.92,y:0.80,c:'#ff2a2a'}, // bottom-right red
+  {x:0.10,y:0.88,c:'#1b6aff'}, // bottom-left blue
+  {x:0.50,y:0.55,c:'#6bff6b'}, // center greenish
+  {x:0.50,y:0.15,c:'#ffd56b'}  // warm highlight
+];
+
+function renderGradient(time){
+  gtx.clearRect(0,0,W,H);
+  gtx.globalCompositeOperation='source-over';
+  gtx.fillStyle='#000';
+  gtx.fillRect(0,0,W,H);
+  gtx.globalCompositeOperation='lighter'; // additive look (color-dodge-ish)
+
+  const maxR = Math.max(W,H)*0.75;
+  // subtle drift
+  for (let i=0;i<points.length;i++){
+    const p = points[i];
+    const jitter = Math.sin(time*0.0005 + i)*0.01;
+    const px = (p.x + jitter) * W + mouse.x*0.2;
+    const py = (p.y + jitter) * H + mouse.y*0.2;
+
+    const g = gtx.createRadialGradient(px,py,0, px,py,maxR);
+    // soft core -> saturated mid -> fade
+    g.addColorStop(0.00, 'rgba(255,255,255,0.00)');
+    g.addColorStop(0.15, hexToRgba(p.c,0.85));
+    g.addColorStop(0.55, hexToRgba(p.c,0.35));
+    g.addColorStop(1.00, 'rgba(0,0,0,0.0)');
+
+    gtx.fillStyle = g;
+    gtx.beginPath();
+    gtx.rect(0,0,W,H);
+    gtx.fill();
+  }
+  gtx.globalCompositeOperation='source-over';
+}
+
+// ---- ASCII BLOB RING ----
+// The ASCII is drawn inside a clipped “ring” (two ellipses).
+const asciiLines = (`
+predict_engagement(x)
+tokenizer.encode(ad_text)
+sequence = pad(tokens, 128)
+model.compile(optimizer='adam')
+if persona.score > 0.72:
+  engage('sequence-4')
+SELECT campaign_id, AVG(conversion) FROM impressions
+WHERE intent='high' AND cpc < thr
+return JSON.stringify(vector)
+— strata.engine v4 —
+`).trim().split('\n');
+
+function renderAsciiBlob(time){
+  btx.clearRect(0,0,W,H);
+  btx.save();
+
+  // blob orbit path
+  const cx=W*0.5 + Math.cos(time*0.0013)*20 + mouse.x*0.3;
+  const cy=H*0.55 + Math.sin(time*0.0018)*12 + mouse.y*0.3;
+
+  // ring radii with breathing
+  const rx = W*0.28 + Math.sin(time*0.002)*10;
+  const ry = H*0.22 + Math.cos(time*0.0015)*8;
+  const thickness = Math.max(10, Math.min(rx,ry)*0.16);
+
+  // create ring path = outer ellipse minus inner ellipse (clip)
+  const path = new Path2D();
+  path.ellipse(cx,cy,rx,ry, 0, 0, Math.PI*2);
+  const inner = new Path2D();
+  inner.ellipse(cx,cy,rx-thickness,ry-thickness, 0, 0, Math.PI*2);
+
+  btx.save();
+  // Use evenodd fill rule to create a ring-like clip
+  btx.beginPath();
+  path.addPath(path);
+  path.addPath(inner);
+  btx.fill(path,'evenodd'); // build the region
+  // Now actually set the clip
+  btx.clip(path,'evenodd');
+
+  // draw ASCII inside the ring
+  btx.globalCompositeOperation='lighter'; // glow-ish
+  btx.fillStyle='rgba(255,255,255,0.07)';
+  btx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+
+  // rotate slightly so the text follows the ring's vibe
+  btx.translate(cx,cy);
+  btx.rotate(Math.sin(time*0.0007)*0.15);
+
+  const cols = Math.ceil((Math.PI*2*rx)/14); // rough char count around ring
+  for(let row=-3; row<=3; row++){
+    const r = (ry - thickness*0.5) + row*6; // stack rows within ring
+    for(let i=0;i<cols;i++){
+      const a = (i/cols)*Math.PI*2 + time*0.0003;
+      const x = (rx - thickness*0.5)*Math.cos(a);
+      const y = r*Math.sin(a);
+      const line = asciiLines[(i+row+asciiLines.length)%asciiLines.length];
+      const ch = line[(i)%line.length] || ' ';
+      btx.fillText(ch, x, y);
     }
+  }
 
-    function drawGradientBlob(time) {
-      ctx.clearRect(0, 0, w, h);
+  btx.restore(); // end clip
+  btx.restore();
+}
 
-      const centerX = w / 2;
-      const centerY = h / 2;
-      const radiusX = w * 0.45;
-      const radiusY = h * 0.4;
+// ---- LOOP ----
+function hexToRgba(hex, a=1){
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  const r = parseInt(m[1],16), g = parseInt(m[2],16), b = parseInt(m[3],16);
+  return `rgba(${r},${g},${b},${a})`;
+}
 
-      // Create smooth hyperpigmented gradient
-      const gradient = ctx.createRadialGradient(
-        centerX, centerY, 0,
-        centerX, centerY, Math.max(radiusX, radiusY)
-      );
+function animate(){
+  t++;
+  // ease mouse toward target (smooth parallax)
+  mouse.x += (target.x - mouse.x)*0.08;
+  mouse.y += (target.y - mouse.y)*0.08;
 
-      gradient.addColorStop(0.0, "rgba(255, 255, 255, 0)");
-      gradient.addColorStop(0.2, "rgba(0, 255, 255, 0.5)");
-      gradient.addColorStop(0.4, "rgba(255, 0, 255, 0.6)");
-      gradient.addColorStop(0.6, "rgba(255, 255, 0, 0.4)");
-      gradient.addColorStop(0.8, "rgba(255, 0, 80, 0.3)");
-      gradient.addColorStop(1.0, "rgba(0, 0, 0, 0)");
+  renderGradient(t);
+  renderAsciiBlob(t);
+  requestAnimationFrame(animate);
+}
 
-      ctx.save();
-      ctx.filter = "blur(4px)"; // Softens everything
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-
-      ctx.ellipse(
-        centerX + Math.sin(time * 0.005) * 30,
-        centerY + Math.cos(time * 0.003) * 20,
-        radiusX,
-        radiusY,
-        0,
-        0,
-        Math.PI * 2
-      );
-
-      ctx.fill();
-      ctx.restore();
-    }
-
-    function animate() {
-      t++;
-      drawGradientBlob(t);
-      requestAnimationFrame(animate);
-    }
-
-    resize();
-    window.addEventListener('resize', resize);
-    animate();
-  </script>
+resize();
+animate();
+</script>
 </body>
 </html>
+
